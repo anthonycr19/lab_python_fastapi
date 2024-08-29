@@ -1,0 +1,21 @@
+{
+  "name": "Carmen Palacios",
+  "age": 35,
+  "email": "carmenp1995@ibm.com",
+  "address": {
+    "street": "Calle Benabides #2490",
+    "city": "Lima",
+    "zip": "051"
+  },
+  "phone_numbers": [
+    {
+      "type": "personal",
+      "number": "+5198999833"
+    },
+    {
+      "type": "trabajo",
+      "number": "+51998345267"
+    }
+  ]
+}
+
