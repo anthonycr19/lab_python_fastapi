@@ -1,13 +1,22 @@
-from fastapi import FastAPI
+import time
+
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from typing import Optional, List
 from uuid import UUID, uuid4
 from enum import Enum
 
-# instanciamos la clase FastAPI
+from sqlalchemy.orm import Session
+
+from app.v1.utils.db import get_db
+from app.v1.model.model import User
+from app.v1.schema.schemas import UserCreate, UserOut
+
+# Instanciamos la clase FastAPI
 app = FastAPI()
 
 
+# Modelos que se usarán para interactuar para la B.D. en memoria
 class Post(BaseModel):
     author: str
     title: str
@@ -20,7 +29,7 @@ class Role(str, Enum):
     user = "user"
 
 
-class User(BaseModel):
+class UserA(BaseModel):
     id: Optional[UUID] = uuid4()
     first_name: str
     last_name: str
@@ -28,9 +37,16 @@ class User(BaseModel):
     roles: List[Role]
 
 
+class UpdateUser(BaseModel):
+    first_name: Optional[str]
+    last_name: Optional[str]
+    roles: Optional[List[Role]]
+
+
+# Creamos APIs que afectarán a la BD en memoria que tenemos líneas abajo (db_m)
 @app.get("/")
 async def root():
-    return {"name": "Carolina Gutierrez"}
+    return {"name": "Carolina Gutierrez", "city": "Lima", "age": 24}
 
 
 @app.get('/posts/{id}')
@@ -45,46 +61,60 @@ def addPost(post: Post):
 
 @app.get("/api/v1/users")
 def get_users():
-    return db
+    return db_m
 
 
 @app.post("/api/v1/users")
-async def create_user(user: User):
-    db.append(user)
+def create_user(user: UserA):
+    db_m.append(user)
     return {"id": user.id}
 
 
 @app.delete("/api/v1/users/{id}")
 def delete_user(id: UUID):
-    for user in db:
+    for user in db_m:
         if user.id == id:
-            db.remove(user)
+            db_m.remove(user)
             return
 
 
-db: List[User] = [
-    User(
+@app.put("/api/v1/user/{id}")
+def update_user(id: UUID, user_update: UpdateUser):
+    for user in db_m:
+        if user.id == id:
+            if user_update.first_name is not None:
+                user.first_name = user_update.first_name
+            if user_update.last_name is not None:
+                user.last_name = user_update.last_name
+            if user_update.roles is not None:
+                user.roles = user_update.roles
+        return user.id
+
+
+# Creamos una Base de Datos en memoria
+db_m: List[UserA] = [
+    UserA(
         id=uuid4(),
         first_name="Freddy",
         last_name="Nolasco",
         city="Lima",
         roles=[Role.user],
     ),
-    User(
+    UserA(
         id=uuid4(),
         first_name="Juana",
         last_name="Falcón",
         city="Trujillo",
         roles=[Role.admin],
     ),
-    User(
+    UserA(
         id=uuid4(),
         first_name="Noelia",
         last_name="Perez",
         city="Lima",
         roles=[Role.user],
     ),
-    User(
+    UserA(
         id=uuid4(),
         first_name="Edwin",
         last_name="Deza",
@@ -92,3 +122,5 @@ db: List[User] = [
         roles=[Role.admin, Role.user],
     ),
 ]
+
+

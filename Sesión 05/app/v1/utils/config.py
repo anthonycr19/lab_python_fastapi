@@ -1,9 +1,11 @@
 import os
-from pydantic import BaseSettings
+#from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
+from pathlib import Path
 
-
-load_dotenv()
+env_path = Path('.') / '.env'
+load_dotenv(dotenv_path=env_path)
 
 
 class Settings(BaseSettings):
@@ -14,7 +16,7 @@ class Settings(BaseSettings):
     db_pass: str = os.getenv('DB_PASS')
     db_host: str = os.getenv('DB_HOST')
     db_port: str = os.getenv('DB_PORT')
-    db_url = f"{db}://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+    db_url: str = f"{db}://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
 
 settings = Settings()
