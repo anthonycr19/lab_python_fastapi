@@ -1,5 +1,4 @@
 import time
-
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from typing import Optional, List
@@ -7,10 +6,12 @@ from uuid import UUID, uuid4
 from enum import Enum
 
 from sqlalchemy.orm import Session
+from app.v1.utils.db import get_db, authenticate_user, create_access_token, get_password_hash, get_current_user
+from app.v1.model.model import User, Product
+from app.v1.schema.schemas import UserCreate, UserOut, Token, ProductCreate, ProductOut
 
-from app.v1.utils.db import get_db
-from app.v1.model.model import User
-from app.v1.schema.schemas import UserCreate, UserOut
+from fastapi.security import OAuth2PasswordRequestForm
+
 
 # Instanciamos la clase FastAPI
 app = FastAPI()
@@ -91,7 +92,153 @@ def update_user(id: UUID, user_update: UpdateUser):
         return user.id
 
 
-# Creamos una Base de Datos en memoria
+# Middleware que agregará un campo personalizado a la cabecerá de las peticiones de las APIs
+@app.middleware("http")
+async def add_custom_header(request: Request, call_next):
+    response = await call_next(Request)
+    response.headers["X-hi-name"] = "Hi Carol welcome!"
+
+    return response
+
+
+# Middleware que nos dará el tiempo de ejecución de las APIs y se estará agregando en el header
+# con el nombre de "X-process-Time"
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+
+    start_time = time.time()
+    # Se ejecutará "add_process_time_header" en el middleware y la API se ejecutará con la ruta coincidente
+    response = await call_next(request)
+
+    process_time = time.time() - start_time
+    # Añadimos el tiempo en la cabecera de la respuesta
+    response.headers["X-process-Time"] = str(process_time)
+    print("Tiempo de procedimiento: {}".format(process_time))
+    return response
+
+
+# Esta función nos ayudará a autenticar a un usuario mediante su usuario y contraseña
+@app.post("/token", response_model=Token)
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario o password incorrecto",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    access_token = create_access_token(
+        data={"sub": form_data.username}
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.post("/new_user/", response_model=UserOut)
+def create_new_user(user: UserCreate, db: Session = Depends(get_db)):
+    hashed_password = get_password_hash(user.hashed_password)
+    new_user = User(first_name=user.first_name, last_name=user.last_name, city=user.city,
+                    username=user.username, hashed_password=hashed_password)
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+
+# API protegida por el token
+@app.get("/all_users", response_model=List[UserOut])
+def list_users(session: Session = Depends(get_db)):
+    list_user = session.query(User).all()   # Obtenemos todos los usuarios de la tabla en la BD
+    return list_user
+
+
+# API protegida por el token
+@app.get("/user/{id}", response_model=UserOut, dependencies=[Depends(get_current_user)])
+def read_user(id: UUID, session: Session = Depends(get_db)):
+    user = session.query(User).get(id)
+    # Verificar si el id existe. Si no, devolver respuesta 404 Not found
+    if not user:
+        raise HTTPException(status_code=404, detail=f"Usuario con id {id} no se encuentra en la BD")
+    return user
+
+
+@app.put("/user/{id}", response_model=UserOut)
+def update_user(id: UUID, user_update: UserCreate, session: Session = Depends(get_db)):
+    user = session.query(User).get(id)  # Obtenemos el usuario de la BD
+    if user:
+        user.first_name = user_update.first_name
+        user.last_name = user_update.last_name
+        user.city = user_update.city
+        session.commit()
+    if not user:
+        raise HTTPException(status_code=404, detail=f"Usuario con id {id} no fue encontrado para poder actualizarlo")
+    return user
+
+
+@app.delete("/user/{id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(id: UUID, session: Session = Depends(get_db)):
+
+    user = session.query(User).get(id)  # Obtenemos el usuario de la BD
+    if user:
+        session.delete(user)
+        session.commit()
+    if not user:
+        raise HTTPException(status_code=404, detail=f"Usuario con el id {id} no fue encontrado")
+    return user
+
+
+# API para crear un producto asociado a un usuario
+@app.post("/users/{user_id}/products/", response_model=ProductOut)
+def create_product_for_user(user_id: UUID, product: ProductCreate, db: Session = Depends(get_db)):
+    print("USEEEER: {}".format(user_id))
+    db_product = Product(**product.dict(), owner_id=user_id)
+    db.add(db_product)
+    db.commit()
+    db.refresh(db_product)
+    return db_product
+
+
+"""
+Configuración personalizada de OpenAPI:
+- Sacar los comentarios del siguiente código en el caso de querer que 
+para ciertas APIs necesiten el ingreso de Token Bearer luego que la obtenemos del API
+'/token' que se ha creado líneas arriba.
+"""
+
+"""
+from fastapi.openapi.utils import get_openapi
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="My API",
+        version="1.0.0",
+        description="API description",
+        routes=app.routes,
+    )
+    openapi_schema["components"]["securitySchemes"] = {
+        "bearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+        }
+    }
+    # Descomentar la siguiente línea en caso que se quiera aplicar el uso de Token Bearer para todas las APIs
+    # Dejar el for y su contenido comentado
+    #openapi_schema["security"] = [{"bearerAuth": []}]
+    for route in openapi_schema["paths"]:
+        if "/all_users" in route:
+            openapi_schema["paths"][route]["get"]["security"] = [{"bearerAuth": []}]
+        if "/user/{id}" in route:
+            openapi_schema["paths"][route]["get"]["security"] = [{"bearerAuth": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+"""
+
+#Creamos una Base de Datos en memoria
 db_m: List[UserA] = [
     UserA(
         id=uuid4(),

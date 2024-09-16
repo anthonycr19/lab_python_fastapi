@@ -69,7 +69,7 @@ def get_user_by_email(db: Session, email: str):
 #Authenticate user
 def authenticate_user(db: Session, username: str, password: str):
     user = get_user_by_username(db, username)
-
+    print("Usuariooo {}".format(user.__dict__))
     if not user:
         return False
     if not pwd_context.verify(password, user.hashed_password):

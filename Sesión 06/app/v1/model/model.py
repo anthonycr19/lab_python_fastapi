@@ -1,7 +1,7 @@
 import uuid
 
-from sqlalchemy import Column, String, Integer, create_engine
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, String, Integer, create_engine, Float, ForeignKey
+from sqlalchemy.orm import declarative_base,relationship
 from sqlalchemy.dialects.postgresql import UUID
 
 
@@ -16,6 +16,24 @@ class User(Base):
     first_name = Column(String)
     last_name = Column(String)
     city = Column(String)
+    username = Column(String, unique=True)
+    hashed_password = Column(String)
+
+    # Relación con el modelo Product
+    products = relationship('Product', back_populates='owner')
+
+class Product(Base):
+    __tablename__ = "products"
+
+    id = Column(Integer, primary_key=True)
+    name_prod = Column(String)
+    price = Column(Float)
+
+    # Lave foránera a la tabla User
+    owner_id = Column(UUID(as_uuid=True), ForeignKey('users.id'))
+
+    # relación inversa
+    owner = relationship("User", back_populates="products")
 
 
 # Para esta siguiente variable se pondrá el usuario, contraseña, hostname, puerto y nombre de la B.D.
